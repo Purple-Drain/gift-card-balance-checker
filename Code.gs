@@ -2,6 +2,7 @@
  * Gift Card Balance Checker with Advanced CAPTCHA Alert & Optimizations
  * Automatically checks card balances and opens browser when CAPTCHA is needed
  * Features: Window reuse, CAPTCHA queueing, progress notifications, error handling
+ * Supports: Standard gift cards (card/CVV/expiry) and David Jones Reward cards (number/PIN)
  */
 
 // Global variables for window management and queue
@@ -105,6 +106,7 @@ function resumeQueue() {
 
 function checkBalance(row) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var retailer = sheet.getRange(row, 2).getValue(); // Column B - Retailer
   var cardNumber = sheet.getRange(row, 4).getValue(); // Column D
   var cvv = sheet.getRange(row, 6).getValue(); // Column F
   var expiry = sheet.getRange(row, 8).getValue(); // Column H
@@ -122,13 +124,19 @@ function checkBalance(row) {
     return;
   }
   
+  // Check if this is a David Jones card
+  var isDavidJones = false;
+  if (retailer && retailer.toString().toLowerCase().includes('david jones')) {
+    isDavidJones = true;
+  }
+  
   // Parse expiry date
   var expiryDate = new Date(expiry);
   var month = String(expiryDate.getMonth() + 1).padStart(2, '0');
   var year = String(expiryDate.getFullYear()).slice(-2);
   
   // Create HTML for CAPTCHA handling
-  var html = createBalanceCheckHTML(cardNumber, month, year, cvv, balanceUrl, row);
+  var html = createBalanceCheckHTML(cardNumber, month, year, cvv, balanceUrl, row, isDavidJones);
   
   // Reuse window or create new one
   if (!globalWindow || globalWindow.closed) {
@@ -145,14 +153,20 @@ function checkBalance(row) {
   }
 }
 
-function createBalanceCheckHTML(cardNumber, month, year, cvv, url, row) {
+function createBalanceCheckHTML(cardNumber, month, year, cvv, url, row, isDavidJones) {
   // Use default URL if not provided
   if (!url) {
-    url = 'https://cardbalance.com.au/';
+    if (isDavidJones) {
+      url = 'https://www.davidjones.com/rewards/balance-check';
+    } else {
+      url = 'https://cardbalance.com.au/';
+    }
   }
   
-  return `
-<!DOCTYPE html>
+  var cardTypeLabel = isDavidJones ? 'Reward Number' : 'Card Number';
+  var cvvLabel = isDavidJones ? 'PIN' : 'CVV';
+  
+  return `<!DOCTYPE html>
 <html>
 <head>
   <base target="_blank">
@@ -222,10 +236,27 @@ function createBalanceCheckHTML(cardNumber, month, year, cvv, url, row) {
     .balance-input button:hover {
       background: #357ae8;
     }
+    .card-details {
+      background: #e8f0fe;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .card-details strong {
+      color: #1a73e8;
+    }
   </style>
 </head>
 <body>
   <div id="status">⏳ Form loaded. Fill in details and complete CAPTCHA if needed.</div>
+  
+  <div class="card-details">
+    <strong>${cardTypeLabel}:</strong> ${cardNumber}<br>
+    <strong>${cvvLabel}:</strong> ${cvv}<br>
+    <strong>Expiry:</strong> ${month}/${year}
+  </div>
+  
   <iframe id="checkFrame" src="about:blank"></iframe>
   
   <div class="balance-input">
@@ -238,7 +269,7 @@ function createBalanceCheckHTML(cardNumber, month, year, cvv, url, row) {
     💡 <strong>Tip:</strong> If the form is hard to see, click "Open in Full Browser"<br>
     🔄 <strong>After CAPTCHA:</strong> Enter the balance above and click "Save & Continue" to process the next card
   </div>
-
+  
   <script>
     const cardNumber = '${cardNumber}';
     const month = '${month}';
@@ -246,6 +277,7 @@ function createBalanceCheckHTML(cardNumber, month, year, cvv, url, row) {
     const cvv = '${cvv}';
     const url = '${url}';
     const row = ${row};
+    const isDavidJones = ${isDavidJones};
     
     function openFullWindow() {
       window.open(url, '_blank');
